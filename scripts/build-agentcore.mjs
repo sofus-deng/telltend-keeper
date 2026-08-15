@@ -16,6 +16,10 @@ await build({
   outfile: `${outputDirectory}/app.js`,
   sourcemap: true,
   logLevel: 'info',
+  // Strands ships an optional S3 context-offloader plugin. Keeper does not enable
+  // that plugin, so its dynamic client import must not silently become a runtime
+  // dependency or an undeclared capability of this competition bundle.
+  external: ['@aws-sdk/client-s3'],
 })
 
 await writeFile(
