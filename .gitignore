@@ -6,5 +6,6 @@ coverage/
 !.env.example
 .DS_Store
 *.log
+.keeper/
 .agentcore/
 cdk.out/

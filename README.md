@@ -2,15 +2,17 @@
 
 Telltend Keeper is a governed website-operations agent for the **Agents for Humans Hackathon — Professional Agents** track.
 
-It is designed to handle authorized routine website maintenance in the background, verify the live result, and involve a human only when a request is ambiguous, outside delegated authority, or genuinely high risk.
+It is designed to handle authorized routine website maintenance in the background, verify the actual result, and involve a human only when a request is ambiguous, outside delegated authority, or genuinely high risk.
 
 ## Status
 
-**P0 bootstrap. No production capability is claimed yet.**
+**P1 provider-neutral runtime gate. No production deployment or customer-site capability is claimed yet.**
 
 This repository was created during the hackathon submission period. Product concepts and specifications that informed the project predate the hackathon; the implementation submitted from this repository is developed during the eligible period and disclosed in `PREEXISTING_WORK.md`.
 
-The current P0 build intentionally has **no publication tool**. It proves the first architectural boundary: Strands can inspect delegated capabilities and propose work, while deterministic server-side policy decides whether the work is autonomous, requires a human decision, or is denied.
+P0 established the judgment-versus-authority boundary. P1 adds a restart-safe controlled fixture runtime with a non-skippable ChangeSet state machine, human-decision gate, idempotent publication, actual-state verification, false-success detection, and rollback.
+
+The current side effect changes a **controlled persisted fixture state**, not a public customer website. A live hosted fixture and Amazon Bedrock AgentCore deployment are separate evidence gates.
 
 ## Responsibility split
 
@@ -18,34 +20,55 @@ The current P0 build intentionally has **no publication tool**. It proves the fi
 - **Keeper core** — capability scope, policy, state transitions, validation, publication authority, verification, rollback, idempotency, and audit truth.
 - **Amazon Bedrock AgentCore Runtime** — intended competition runtime, session isolation, background execution, and runtime evidence.
 
-The model is never the authority for production state. A model response that says a task is complete does not make a publication verified.
+The model is never the authority for operational state. A model response or publish-tool response that says a task is complete does not make a publication verified.
 
-## Target hero loop
+## Governed hero loop
 
 ```text
 maintenance request
-→ inspect allowed site capabilities
-→ create a structured ChangeSet
-→ validate and evaluate policy
-→ publish only when authorized
-→ read the live site back
-→ verify the expected result
+→ inspect delegated site capabilities
+→ create a durable structured ChangeSet
+→ deterministic policy decision
+   ├─ authorized → validate → publish
+   ├─ human required → stop for an external decision
+   └─ denied → stop with no side effect
+→ read actual fixture state after publication
+→ verify expected result
 → rollback on verification failure
-→ record an audit trail
+→ preserve audit and idempotency evidence
 ```
 
-A separate safety path demonstrates a request that requires a real human decision rather than allowing the agent to expand its own authority.
+## Strands tool surface
 
-## P0 tools
+Keeper exposes only bounded operations to the model:
 
-- `site_inspect` — reads the competition-safe demo site capability manifest.
-- `change_propose` — evaluates structured operations against deterministic capability policy. It does not publish.
+- `site_inspect` — read the current controlled site state and capability manifest.
+- `change_propose` — create a persisted ChangeSet and obtain the authoritative policy result.
+- `change_validate` — validate only an authorized ChangeSet.
+- `decision_request` — explain why a human decision is required; it cannot approve anything.
+- `publish_execute` — execute only a validated ChangeSet through the governed core.
+- `publish_verify` — compare the actual fixture state with expected publication state.
+- `publish_rollback` — restore the previous verified content only after verification failure.
 
-The demo manifest currently distinguishes:
+There is deliberately **no agent tool that grants human approval**. Human authority stays outside the model/tool loop.
+
+The demo manifest distinguishes:
 
 - low-risk delegated content changes that may proceed automatically;
 - pricing changes that require a human decision;
 - executable tracking-script changes that Keeper is not delegated to perform.
+
+## Runtime invariants covered by tests
+
+- gates cannot be skipped from `authorized` directly to publication;
+- denied capabilities fail closed with zero publication side effect;
+- sensitive pricing requires an explicit external human decision before execution;
+- publication is idempotent and does not create duplicate site versions;
+- an idempotency key cannot be rebound to a different request;
+- persisted ChangeSets can resume after process reconstruction;
+- a persisted `publishing` state can retry safely;
+- a simulated publish-tool success with unchanged fixture state fails verification;
+- verification failure can restore the prior content and records the rollback.
 
 ## Local setup
 
@@ -61,32 +84,45 @@ Install dependencies:
 npm install
 ```
 
-Run deterministic checks without AWS credentials:
+Run deterministic type checking and tests without AWS credentials:
 
 ```bash
 npm run check
 ```
 
-Run the P0 Strands agent:
+Run the Strands agent:
 
 ```bash
-npm run agent -- "Update the approved homepage hero and summer business hours."
+npm run agent -- "Update the approved homepage hero to Summer at Northstar Cafe and business hours to Mon–Sun 08:00–20:00."
 ```
 
-Strands uses Amazon Bedrock by default. The exact competition model will be pinned after the model/cost spike rather than becoming part of Keeper domain truth.
+Local agent state is persisted under `.keeper/runtime.json` and is excluded from Git. Remove that directory when you intentionally want a clean local fixture.
+
+Strands uses Amazon Bedrock by default. The exact competition model will be pinned after a model/cost spike rather than becoming part of Keeper domain truth.
 
 ## Repository map
 
 ```text
-src/domain.ts              public-safe domain contracts and demo manifest
-src/policy.ts              deterministic authority evaluation
-src/agent.ts               bounded Strands tools and P0 agent
+src/domain.ts              public-safe domain contracts and capability manifest
+src/policy.ts              deterministic capability policy
+src/runtime-types.ts       ChangeSet, site, publication and audit contracts
+src/state-machine.ts       non-skippable ChangeSet transitions
+src/store.ts               restart-safe JSON state adapter for the controlled fixture
+src/keeper-core.ts         governed request / decision / validate / publish / verify / rollback core
+src/agent.ts               bounded Strands agent tools and orchestration prompt
 test/policy.test.ts        deterministic policy tests
+test/runtime.test.ts       runtime, failure, recovery and idempotency tests
 docs/architecture.md       judgment-versus-authority architecture
 docs/source-lineage.md     dependency and source ledger
 PREEXISTING_WORK.md        hackathon eligibility/source disclosure
-AGENTS.md                   instructions and safety rules for coding agents
+AGENTS.md                  instructions and safety rules for coding agents
 ```
+
+## What remains before submission
+
+P1 does **not** prove cloud-durable multi-worker state, a public hosted fixture, real Bedrock tool trajectories, AgentCore Runtime deployment, CloudWatch/OTEL traces, real customer data, agency adoption, or market validation.
+
+The next AWS-specific gate will keep the provider-neutral core intact while adding an AgentCore-compatible deployment adapter and a public controlled fixture that can be independently read back during the demo.
 
 ## Public-scope boundary
 
@@ -97,8 +133,8 @@ This repository contains only the competition-safe implementation needed to run,
 - Node.js 22
 - TypeScript
 - Strands Agents SDK
-- Amazon Bedrock
-- Amazon Bedrock AgentCore Runtime planned for the runtime gate
+- Amazon Bedrock for real model invocation
+- Amazon Bedrock AgentCore Runtime planned as the competition runtime
 
 ## License
 
