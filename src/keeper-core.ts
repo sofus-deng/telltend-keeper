@@ -59,6 +59,11 @@ export class KeeperCore {
   requestChange(input: RequestChangeInput): StoredChangeSet {
     const existing = this.store.findChangeSetByIdempotencyKey(input.idempotencyKey)
     if (existing) {
+      if (!sameRequest(existing, input)) {
+        throw new Error(
+          `Idempotency key ${input.idempotencyKey} is already bound to a different request.`,
+        )
+      }
       this.store.appendAudit(existing.id, 'request.idempotency_replay', this.clock(), {
         idempotencyKey: input.idempotencyKey,
       })
@@ -154,11 +159,18 @@ export class KeeperCore {
       return { publication: existingPublication, replayed: true }
     }
 
-    if (changeSet.state !== 'validated') {
+    let publishing: StoredChangeSet
+    if (changeSet.state === 'validated') {
+      publishing = this.transition(changeSet, 'publishing', 'publication.started')
+    } else if (changeSet.state === 'publishing') {
+      publishing = changeSet
+      this.store.appendAudit(changeSet.id, 'publication.resume', this.clock(), {
+        idempotencyKey: changeSet.idempotencyKey,
+      })
+    } else {
       throw new Error(`ChangeSet ${changeSet.id} must be validated before publication.`)
     }
 
-    const publishing = this.transition(changeSet, 'publishing', 'publication.started')
     const beforeSite = this.requireSite(publishing.siteId)
     const expectedSite = applyOperations(beforeSite, publishing.operations)
     const failureMode = options.failureMode ?? 'none'
@@ -176,9 +188,9 @@ export class KeeperCore {
     }
 
     const published = this.transitionInMemory(publishing, 'published', at)
-    this.store.commitPublication(actualSite, publication, published, at)
+    const committed = this.store.commitPublication(actualSite, publication, published, at)
 
-    return { publication, replayed: false }
+    return { publication: committed, replayed: false }
   }
 
   verify(changeSetId: string): VerificationResult {
@@ -273,6 +285,24 @@ export class KeeperCore {
     }
     return site
   }
+}
+
+function sameRequest(existing: StoredChangeSet, input: RequestChangeInput): boolean {
+  if (existing.id !== input.changeSetId || existing.requestSummary !== input.requestSummary) {
+    return false
+  }
+  if (existing.operations.length !== input.operations.length) {
+    return false
+  }
+  return existing.operations.every((operation, index) => {
+    const candidate = input.operations[index]
+    return (
+      candidate !== undefined &&
+      operation.capability === candidate.capability &&
+      operation.summary === candidate.summary &&
+      operation.value === candidate.value
+    )
+  })
 }
 
 function applyOperations(
