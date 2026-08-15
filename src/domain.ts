@@ -25,6 +25,7 @@ export interface SiteCapabilityManifest {
 export interface ChangeOperation {
   readonly capability: CapabilityName
   readonly summary: string
+  readonly value?: string
 }
 
 export type PolicyDecision = 'allow' | 'human_required' | 'deny'
