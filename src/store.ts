@@ -92,6 +92,44 @@ export class JsonFileKeeperStore {
     this.write(snapshot)
   }
 
+  commitPublication(
+    actualSite: FixtureSiteState,
+    publication: PublicationRecord,
+    publishedChangeSet: StoredChangeSet,
+    at: string,
+  ): PublicationRecord {
+    const snapshot = this.read()
+    const existing = snapshot.publications[publication.idempotencyKey]
+    if (existing) {
+      return structuredClone(existing)
+    }
+
+    snapshot.sites[actualSite.siteId] = structuredClone(actualSite)
+    snapshot.publications[publication.idempotencyKey] = structuredClone(publication)
+    snapshot.changeSets[publishedChangeSet.id] = structuredClone(publishedChangeSet)
+    snapshot.audits.push(
+      this.auditEvent(snapshot, publishedChangeSet.id, 'publication.committed', at, {
+        publicationId: publication.id,
+        failureMode: publication.failureMode,
+        toolReportedSuccess: publication.toolReportedSuccess,
+      }),
+    )
+    this.write(snapshot)
+    return structuredClone(publication)
+  }
+
+  commitRollback(site: FixtureSiteState, rolledBackChangeSet: StoredChangeSet, at: string): void {
+    const snapshot = this.read()
+    snapshot.sites[site.siteId] = structuredClone(site)
+    snapshot.changeSets[rolledBackChangeSet.id] = structuredClone(rolledBackChangeSet)
+    snapshot.audits.push(
+      this.auditEvent(snapshot, rolledBackChangeSet.id, 'publication.rolled_back', at, {
+        siteVersion: site.version,
+      }),
+    )
+    this.write(snapshot)
+  }
+
   appendAudit(
     changeSetId: string,
     type: string,
@@ -99,13 +137,7 @@ export class JsonFileKeeperStore {
     details: Readonly<Record<string, unknown>> = {},
   ): AuditEvent {
     const snapshot = this.read()
-    const event: AuditEvent = {
-      sequence: snapshot.audits.length + 1,
-      changeSetId,
-      type,
-      at,
-      details: structuredClone(details),
-    }
+    const event = this.auditEvent(snapshot, changeSetId, type, at, details)
     snapshot.audits.push(event)
     this.write(snapshot)
     return structuredClone(event)
@@ -115,6 +147,22 @@ export class JsonFileKeeperStore {
     return this.read().audits
       .filter((event) => event.changeSetId === changeSetId)
       .map((event) => structuredClone(event))
+  }
+
+  private auditEvent(
+    snapshot: MutableKeeperSnapshot,
+    changeSetId: string,
+    type: string,
+    at: string,
+    details: Readonly<Record<string, unknown>>,
+  ): AuditEvent {
+    return {
+      sequence: snapshot.audits.length + 1,
+      changeSetId,
+      type,
+      at,
+      details: structuredClone(details),
+    }
   }
 
   private read(): MutableKeeperSnapshot {
