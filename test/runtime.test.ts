@@ -28,7 +28,7 @@ function harness() {
 }
 
 describe('KeeperCore runtime gate', () => {
-  it('completes an authorized fixture publication only after live-state verification', () => {
+  it('completes an authorized fixture publication only after fixture-state verification', () => {
     const { core, store } = harness()
 
     const requested = core.requestChange({
@@ -126,7 +126,7 @@ describe('KeeperCore runtime gate', () => {
     expect(store.snapshot().publications).toStrictEqual({})
   })
 
-  it('does not false-pass when a publish tool reports success but live state is wrong, then verifies rollback', () => {
+  it('does not false-pass when a publish tool reports success but fixture state is wrong, then verifies rollback', () => {
     const { core, store } = harness()
     const before = store.getSite(defaultFixtureSite.siteId)
     expect(before).toBeDefined()
@@ -193,6 +193,38 @@ describe('KeeperCore runtime gate', () => {
     expect(Object.keys(store.snapshot().publications)).toHaveLength(1)
   })
 
+  it('rejects reuse of an idempotency key for a different request', () => {
+    const { core } = harness()
+
+    core.requestChange({
+      changeSetId: 'change-key-owner',
+      idempotencyKey: 'shared-key-v1',
+      requestSummary: 'Update the approved hero.',
+      operations: [
+        {
+          capability: 'content.hero',
+          summary: 'Update hero.',
+          value: 'Summer at Northstar Cafe',
+        },
+      ],
+    })
+
+    expect(() =>
+      core.requestChange({
+        changeSetId: 'change-key-collision',
+        idempotencyKey: 'shared-key-v1',
+        requestSummary: 'Change the CTA instead.',
+        operations: [
+          {
+            capability: 'content.cta',
+            summary: 'Change CTA.',
+            value: 'Reserve now',
+          },
+        ],
+      }),
+    ).toThrowError(/already bound to a different request/)
+  })
+
   it('resumes a validated ChangeSet after reconstructing the runtime from the persisted state file', () => {
     const { core, statePath, clock } = harness()
 
@@ -215,6 +247,35 @@ describe('KeeperCore runtime gate', () => {
     restartedCore.publish(requested.id)
     expect(restartedCore.verify(requested.id).verified).toBe(true)
     expect(restartedCore.getChangeSet(requested.id).state).toBe('verified')
+  })
+
+  it('retries safely after a process stops with a persisted publishing state', () => {
+    const { core, store, statePath, clock } = harness()
+
+    const requested = core.requestChange({
+      changeSetId: 'change-publishing-resume',
+      idempotencyKey: 'request-publishing-resume-v1',
+      requestSummary: 'Update the approved CTA.',
+      operations: [
+        {
+          capability: 'content.cta',
+          summary: 'Publish approved CTA.',
+          value: 'Reserve a summer table',
+        },
+      ],
+    })
+    const validated = core.validate(requested.id)
+
+    // Simulates a process stop immediately after the durable validated -> publishing transition.
+    store.saveChangeSet({ ...validated, state: 'publishing', updatedAt: clock() })
+
+    const restartedCore = new KeeperCore(new JsonFileKeeperStore(statePath), undefined, clock)
+    const publication = restartedCore.publish(requested.id)
+    expect(publication.replayed).toBe(false)
+    expect(restartedCore.verify(requested.id).verified).toBe(true)
+    expect(
+      restartedCore.store.getAudits(requested.id).some((event) => event.type === 'publication.resume'),
+    ).toBe(true)
   })
 
   it('blocks publication when validation has not occurred', () => {
