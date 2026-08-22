@@ -89,7 +89,7 @@ describe('OperationTrace read-only projection', () => {
     ])
   })
 
-  it('preserves a real human-decision reference without exposing the decision reason', () => {
+  it('preserves a real human-decision reference without exporting identity or decision reason', () => {
     const { core, store } = harness()
     const requested = core.requestChange({
       changeSetId: 'trace-human',
@@ -118,9 +118,10 @@ describe('OperationTrace read-only projection', () => {
     const trace = projectKeeperChangeSetTrace(store.snapshot(), requested.id)
 
     expect(trace.owner_status).toBe('verified')
-    expect(trace.principal_refs).toStrictEqual(['telltend:principal:site-owner'])
+    expect(trace.principal_refs).toStrictEqual(['telltend:human-decision:trace-human'])
     expect(trace.approval_refs).toStrictEqual(['telltend:human-decision:trace-human'])
     serializedTraceDoesNotContain(trace, [
+      'site-owner',
       'Approved promotional price for the campaign window.',
       'Change the public campaign price.',
       '$9',
