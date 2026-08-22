@@ -21,6 +21,12 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Pin npm CLI
+        run: npm install --global npm@11.19.0 --no-audit --no-fund
+      - name: Show toolchain
+        run: |
+          node --version
+          npm --version
       - name: Install pinned direct dependencies
         run: npm install --no-audit --no-fund
       - name: Typecheck and test
