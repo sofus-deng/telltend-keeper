@@ -74,7 +74,22 @@ The demo manifest distinguishes:
 - a simulated publish-tool success with unchanged fixture state fails verification;
 - verification failure can restore the prior content and records the rollback;
 - the AgentCore HTTP adapter serves `/ping` and accepts JSON or binary `/invocations` payloads;
-- the generated Node.js 22 CommonJS AgentCore bundle starts and passes a real `/ping` smoke test without AWS credentials.
+- the generated Node.js 22 CommonJS AgentCore bundle starts and passes a real `/ping` smoke test without AWS credentials;
+- an experimental read-only trace projection can be derived from completed Keeper runtime records without copying site-content or request payload into the trace.
+
+## Experimental read-only trace projection
+
+`src/operation-trace.ts` is a deliberately small **experimental projection**, not another authority or state machine. It derives opaque references from an already-persisted Keeper ChangeSet, publication record, audit events, human decision (when one actually exists), and final site version.
+
+The projection:
+
+- does not publish, verify, roll back, or perform a state transition;
+- does not add an agent tool, persistence field, dependency, service, or AWS requirement;
+- does not copy hero text, hours, CTA, price, request text, or human-decision reasons into the trace;
+- refuses to invent source-state evidence before a publication record exists;
+- is only controlled-runtime engineering evidence and does **not** establish a shared platform, production observability system, customer adoption, or Telltend Product Core maturity.
+
+The competition runtime remains authoritative. Removing the projection must not change any Keeper behavior.
 
 ## AgentCore deployment adapter
 
@@ -150,6 +165,7 @@ src/runtime-types.ts         ChangeSet, site, publication and audit contracts
 src/state-machine.ts         non-skippable ChangeSet transitions
 src/store.ts                 restart-safe JSON state adapter for the controlled fixture
 src/keeper-core.ts           governed request / decision / validate / publish / verify / rollback core
+src/operation-trace.ts       experimental read-only reference projection from persisted runtime truth
 src/agent-factory.ts         explicit BedrockModel configuration and bounded Strands tools
 src/agent.ts                 local Strands CLI entrypoint
 src/agentcore-app.ts         testable /ping and /invocations HTTP contract
@@ -158,6 +174,7 @@ scripts/build-agentcore.mjs  CommonJS deployment bundle
 scripts/smoke-agentcore.mjs  generated-bundle startup health proof
 test/policy.test.ts          deterministic policy tests
 test/runtime.test.ts         runtime, failure, recovery and idempotency tests
+test/operation-trace.test.ts read-only trace projection and payload-boundary tests
 test/agentcore-app.test.ts   AgentCore HTTP contract tests
 docs/architecture.md         judgment-versus-authority architecture
 docs/aws-deployment-runbook.md AWS deployment and evidence procedure
@@ -171,6 +188,8 @@ AGENTS.md                    instructions and safety rules for coding agents
 P2 does **not** prove cloud-durable multi-worker state, a public hosted fixture, a real Bedrock model/tool trajectory, AgentCore Runtime deployment, CloudWatch/OTEL traces, real customer data, agency adoption, or market validation.
 
 The next evidence gate is operational, not another domain-feature expansion: deploy this same governed core to AgentCore, execute real Bedrock/Strands trajectories, expose a separately readable synthetic hosted site, and preserve the resulting session/trace/source evidence.
+
+The experimental read-only trace projection does not change that priority and is not evidence that the AWS / AgentCore gate has been completed.
 
 ## Public-scope boundary
 
