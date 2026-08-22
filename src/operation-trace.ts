@@ -35,7 +35,8 @@ export interface OperationTraceProjection {
  * Projects already-persisted Keeper runtime truth into a small reference-only trace.
  *
  * This function is deliberately read-only. It never grants authority, performs a
- * transition, publishes, verifies, rolls back, or copies site-content payloads.
+ * transition, publishes, verifies, rolls back, or copies site-content, request,
+ * or human-decision payloads.
  */
 export function projectKeeperChangeSetTrace(
   snapshot: KeeperSnapshot,
@@ -59,6 +60,9 @@ export function projectKeeperChangeSetTrace(
   const verificationFailed = audits.some(
     (event) => event.type === 'publication.verification_failed',
   )
+  const humanDecisionRef = changeSet.humanDecision
+    ? `telltend:human-decision:${changeSet.id}`
+    : null
 
   return {
     spec_version: OPERATION_TRACE_SPEC_VERSION,
@@ -75,12 +79,10 @@ export function projectKeeperChangeSetTrace(
       changeSet.operations.map((operation) => capabilityOperationRef(operation.capability)),
     ),
     transition_refs: [],
-    principal_refs: changeSet.humanDecision
-      ? [principalRef(changeSet.humanDecision.decidedBy)]
-      : [],
+    principal_refs: humanDecisionRef ? [humanDecisionRef] : [],
     executor_refs: ['telltend:executor:keeper-core'],
     policy_refs: [`telltend:policy-decision:${changeSet.policy.decision}`],
-    approval_refs: changeSet.humanDecision ? [`telltend:human-decision:${changeSet.id}`] : [],
+    approval_refs: humanDecisionRef ? [humanDecisionRef] : [],
     evidence_refs: unique([
       ...audits.map(auditRef),
       publicationRef(publication),
@@ -130,10 +132,6 @@ function capabilityOperationRef(capability: string): string {
 
 function publicationRef(publication: PublicationRecord): string {
   return `telltend:publication:${publication.id}`
-}
-
-function principalRef(principalId: string): string {
-  return `telltend:principal:${principalId}`
 }
 
 function auditRef(event: AuditEvent): string {
